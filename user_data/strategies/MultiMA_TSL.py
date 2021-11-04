@@ -12,6 +12,9 @@ from datetime import datetime, timedelta
 from freqtrade.exchange import timeframe_to_prev_date
 from technical.indicators import zema, VIDYA
 
+
+def to_minutes(**timdelta_kwargs):
+        return int(timedelta(**timdelta_kwargs).total_seconds() / 60)
 ###########################################################################################################
 ##    MultiMA_TSL, modded by stash86, based on SMAOffsetProtectOptV1 (modded by Perkmeister)             ##
 ##    Based on @Lamborghini Store's SMAOffsetProtect strat, heavily based on @tirail's original SMAOffset##
@@ -78,7 +81,7 @@ class MultiMA_TSL3(IStrategy):
         "0": 100
     }
 
-    stoploss = -0.15
+    stoploss = -0.99
 
     optimize_sell_ema = False
     base_nb_candles_ema_sell = IntParameter(5, 80, default=20, space='sell', optimize=False)
@@ -159,6 +162,14 @@ class MultiMA_TSL3(IStrategy):
     @property
     def protections(self):
         prot = []
+        prot.append({
+            # Stop trading if max-drawdown is reached.
+            "method": "MaxDrawdown",
+            "lookback_period": to_minutes(hours=12),
+            "trade_limit": 20,  # Considering all pairs that have a minimum of 20 trades
+            "stop_duration": to_minutes(hours=1),
+            "max_allowed_drawdown": 0.2,  # If max-drawdown is > 20% this will activate
+        })
 
         prot.append({
             "method": "CooldownPeriod",
@@ -170,6 +181,14 @@ class MultiMA_TSL3(IStrategy):
             "trade_limit": 1,
             "stop_duration": int(self.low_profit_stop_duration.value),
             "required_profit": self.low_profit_min_req.value
+        })
+
+        prot.append({        # Stop trading if a certain amount of stoploss occurred within a certain time window.
+        "method": "StoplossGuard",
+        "lookback_period": to_minutes(hours=6),
+        "trade_limit": 3,  # Considering all pairs that have a minimum of 3 trades
+        "stop_duration": to_minutes(minutes=30),
+        "only_per_pair": False,  # Looks at all pairs
         })
 
         return prot
@@ -239,8 +258,12 @@ class MultiMA_TSL3(IStrategy):
                         current_rate: float, current_profit: float, **kwargs) -> float:
         sl_new = 1
 
+        hold_pct = 0.0
+        if hasattr(trade, 'hold_pct') and trade.hold_pct is not None:
+            hold_pct = trade.hold_pct
+       
         if(self.custom_info[pair][self.SELL_TRIGGER] == 1):
-            if self.config['runmode'].value in ('live', 'dry_run'):
+            if not self.config['runmode'].value in ('backtest', 'hyperopt') and (hold_pct == 0.0 or current_profit > hold_pct):
                 sl_new = 0.001
 
         if (current_profit > 0.2):
@@ -251,6 +274,8 @@ class MultiMA_TSL3(IStrategy):
             sl_new = 0.02
         elif (current_profit > 0.03):
             sl_new = 0.01
+        elif (current_profit > 0.02):  
+            sl_new = 0.008            
 
         return sl_new
 
