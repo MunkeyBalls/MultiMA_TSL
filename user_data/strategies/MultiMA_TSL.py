@@ -263,7 +263,7 @@ class MultiMA_TSL3(IStrategy):
             hold_pct = trade.hold_pct
        
         if(self.custom_info[pair][self.SELL_TRIGGER] == 1):
-            if not self.config['runmode'].value in ('backtest', 'hyperopt') and (hold_pct == 0.0 or current_profit > hold_pct):
+            if self.config['runmode'].value in ('live', 'dry_run') and (hold_pct == 0.0 or current_profit > hold_pct):
                 sl_new = 0.001
 
         if (current_profit > 0.2):
